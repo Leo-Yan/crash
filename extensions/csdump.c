@@ -51,63 +51,52 @@ static int instance_count;
 
 static int csdump_write_buf(FILE *out_fp, char *component, int cpu_idx)
 {
-	int i;
-	int ret;
+	ulong instance_ptr;
+	ulong field;
+	ulong name_addr;
+	ulong buf_addr;
+	int cpu, buf_sz, i, ret;
+	char name[64];
+	char *buf;
 
 	/* We start i at 1 to skip over the list_head and continue to the last
 	 * instance, which lies at index instance_count */
 	for (i = 1; i <= instance_count; i++) {
-		ulong instance_ptr;
-		ulong field;
-		ulong name_addr;
-		ulong buf_addr;
-		int cpu, buf_sz;
-		char name[64];
-		char *buf = malloc(PAGESIZE());
-
 		instance_ptr = list_data.list_ptr[i];
-		//fprintf(fp, "instance_ptr = 0x%lx\n", instance_ptr);
 
 		field = instance_ptr - koffset(coresight_dump_node, list);
-		//fprintf(fp, "field = 0x%lx\n", field);
 
 		read_value(cpu, field, coresight_dump_node, cpu);
-		//fprintf(fp, "cpu = 0x%x\n", cpu);
-
 		read_value(buf_addr, field, coresight_dump_node, buf);
-		//fprintf(fp, "buf_addr = 0x%lx\n", buf_addr);
-
 		read_value(buf_sz, field, coresight_dump_node, buf_size);
-		//fprintf(fp, "buf_sz = 0x%x\n", buf_sz);
-
 		read_value(name_addr, field, coresight_dump_node, name);
 		read_string(name_addr, name, 64);
-		//fprintf(fp, "name = %s\n", name);
 
 		if (!buf_sz)
 			continue;
 
-		if (!strstr(name, component))
-			continue;
-
-		if ((cpu_idx != -1) && (cpu != cpu_idx))
-			continue;
-
-		buf = malloc(buf_sz);
-		readmem(buf_addr, KVADDR, buf, buf_sz, "read page for write",
-			FAULT_ON_ERROR);
-
-		ret = fwrite(buf, buf_sz, 1, out_fp);
-		if (!ret) {
-			fprintf(fp, "[%d] Cannot write file\n", cpu);
-			free(buf);
-			return -1;
-		}
-
-		free(buf);
+		if (strstr(name, component) && (cpu == cpu_idx))
+			break;
 	}
 
-	return 0;
+
+	if (i > instance_count)
+		return -1;
+
+	buf = malloc(buf_sz);
+	readmem(buf_addr, KVADDR, buf, buf_sz, "read page for write",
+		FAULT_ON_ERROR);
+
+	ret = fwrite(buf, buf_sz, 1, out_fp);
+	if (!ret) {
+		fprintf(fp, "[%d] Cannot write file\n", cpu);
+		free(buf);
+		return -1;
+	}
+
+	free(buf);
+
+	return buf_sz;
 }
 
 static int csdump_metadata(void)
@@ -186,43 +175,7 @@ static unsigned int perf_header_attr2[] = {
 static unsigned int perf_auxtrace_info[] = {
         0x00000046, 0x02680000, 0x00000003, 0x00000000,
         0x00000000, 0x00000000, 0x00000008, 0x00000006,
-        0x00000000, 0x00000000, 0x40404040, 0x40404040,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000010, 0x00000000, 0x28000ea1, 0x00000000,
-        0x4100f403, 0x00000000, 0x00000488, 0x00000000,
-        0x00000000, 0x00000000, 0x000000cc, 0x00000000,
-        0x40404040, 0x40404040, 0x00000001, 0x00000000,
-        0x00000000, 0x00000000, 0x00000012, 0x00000000,
-        0x28000ea1, 0x00000000, 0x4100f403, 0x00000000,
-        0x00000488, 0x00000000, 0x00000000, 0x00000000,
-        0x000000cc, 0x00000000, 0x40404040, 0x40404040,
-        0x00000002, 0x00000000, 0x00000000, 0x00000000,
-        0x00000014, 0x00000000, 0x28000ea1, 0x00000000,
-        0x4100f403, 0x00000000, 0x00000488, 0x00000000,
-        0x00000000, 0x00000000, 0x000000cc, 0x00000000,
-        0x40404040, 0x40404040, 0x00000003, 0x00000000,
-        0x00000000, 0x00000000, 0x00000016, 0x00000000,
-        0x28000ea1, 0x00000000, 0x4100f403, 0x00000000,
-        0x00000488, 0x00000000, 0x00000000, 0x00000000,
-        0x000000cc, 0x00000000, 0x40404040, 0x40404040,
-        0x00000004, 0x00000000, 0x00000000, 0x00000000,
-        0x00000018, 0x00000000, 0x28000ea1, 0x00000000,
-        0x4100f403, 0x00000000, 0x00000488, 0x00000000,
-        0x00000000, 0x00000000, 0x000000cc, 0x00000000,
-        0x40404040, 0x40404040, 0x00000005, 0x00000000,
-        0x00000000, 0x00000000, 0x0000001a, 0x00000000,
-        0x28000ea1, 0x00000000, 0x4100f403, 0x00000000,
-        0x00000488, 0x00000000, 0x00000000, 0x00000000,
-        0x000000cc, 0x00000000, 0x40404040, 0x40404040,
-        0x00000006, 0x00000000, 0x00000000, 0x00000000,
-        0x0000001c, 0x00000000, 0x28000ea1, 0x00000000,
-        0x4100f403, 0x00000000, 0x00000488, 0x00000000,
-        0x00000000, 0x00000000, 0x000000cc, 0x00000000,
-        0x40404040, 0x40404040, 0x00000007, 0x00000000,
-        0x00000000, 0x00000000, 0x0000001e, 0x00000000,
-        0x28000ea1, 0x00000000, 0x4100f403, 0x00000000,
-        0x00000488, 0x00000000, 0x00000000, 0x00000000,
-        0x000000cc, 0x00000000,
+        0x00000000, 0x00000000
 };
 
 static unsigned int perf_kernel_mmap[] = {
@@ -484,17 +437,12 @@ static int csdump_perfdata(void)
 	FILE *out_fp;
 	int online_cpus, i;
 	int trace_len = 0;
+	int ret;
 
 	if ((out_fp = fopen("./perf.data", "w")) == NULL) {
 		fprintf(fp, "Cannot open file\n");
 		return -1;
 	}
-
-	//online_cpus = get_cpus_online();
-	//for (i = 0; i < online_cpus; i++) {
-	//	fprintf(fp, "cpu = %d\n", i);
-	//	csdump_write_buf(out_fp, "etm", i);
-	//}
 
 	fwrite(perf_header, sizeof(perf_header), 1, out_fp);
 	fwrite(perf_event_id, sizeof(perf_event_id), 1, out_fp);
@@ -502,6 +450,13 @@ static int csdump_perfdata(void)
 	fwrite(perf_header_attr2, sizeof(perf_header_attr2), 1, out_fp);
 	fwrite(perf_auxtrace_info, sizeof(perf_auxtrace_info), 1, out_fp);
 	trace_len += sizeof(perf_auxtrace_info);
+
+	online_cpus = get_cpus_online();
+	for (i = 0; i < online_cpus; i++) {
+		fprintf(fp, "cpu = %d\n", i);
+		trace_len += csdump_write_buf(out_fp, "etm", i);
+	}
+
 
 	fwrite(perf_kernel_mmap, sizeof(perf_kernel_mmap), 1, out_fp);
 	trace_len += sizeof(perf_kernel_mmap);
@@ -515,8 +470,7 @@ static int csdump_perfdata(void)
 	fwrite(perf_auxtrace_snapshot, sizeof(perf_auxtrace_snapshot), 1, out_fp);
 	trace_len += sizeof(perf_auxtrace_snapshot);
 
-	csdump_write_buf(out_fp, "etf", -1);
-	trace_len += 0x2000;
+	trace_len += csdump_write_buf(out_fp, "etf", -1);
 
 	fwrite(perf_record_finish, sizeof(perf_record_finish), 1, out_fp);
 	trace_len += sizeof(perf_record_finish);
