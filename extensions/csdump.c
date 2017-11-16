@@ -48,6 +48,7 @@ static int koffset(coresight_dump_node, name);
 
 static struct list_data list_data;
 static int instance_count;
+static int csdump_metadata_len = 0;
 
 static int csdump_write_buf(FILE *out_fp, char *component, int cpu_idx)
 {
@@ -112,7 +113,7 @@ static int csdump_metadata(void)
 	online_cpus = get_cpus_online();
 	for (i = 0; i < online_cpus; i++) {
 		fprintf(fp, "cpu = %d\n", i);
-		csdump_write_buf(out_fp, "etm", i);
+		csdump_metadata_len += csdump_write_buf(out_fp, "etm", i);
 	}
 
 	fclose(out_fp);
@@ -137,105 +138,189 @@ static int csdump_tracedata(void)
 }
 
 static unsigned int perf_header[] = {
-        0x46524550, 0x32454c49, 0x00000068, 0x00000000,
-        0x00000080, 0x00000000, 0x00000078, 0x00000000,
-        0x00000100, 0x00000000, 0x00000178, 0x00000000,
-        0x00002568, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00057cfc, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000
+	0x46524550, 0x32454c49,  /* Magic: PERFILE2 */
+	0x00000068, 0x00000000,  /* header size */
+	0x00000080, 0x00000000,  /* attr size */
+	0x00000078, 0x00000000,  /* attrs offset */
+	0x00000100, 0x00000000,  /* attrs size */
+	0x00000178, 0x00000000,  /* data offset */
+	0x00002568, 0x00000000,  /* data size */
+	0x00000000, 0x00000000,  /* event offset */
+	0x00000000, 0x00000000,  /* event size */
+	0x00057cfc, 0x00000000,  /* feature bitmap */
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000
 };
 
 static unsigned int perf_event_id[] = {
-        0x00000015, 0x00000000, 0x00000016, 0x00000000,
+        0x00000015, 0x00000000,
+	0x00000016, 0x00000000,
 };
 
-static unsigned int perf_header_attr1[] = {
-        0x00000006, 0x00000070, 0x00000000, 0x00000000,
-        0x00000001, 0x00000000, 0x00010003, 0x00000000,
-        0x00000004, 0x00000000, 0x00141001, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000068, 0x00000000, 0x00000008, 0x00000000,
+static unsigned int perf_event_cs_etm[] = {
+	0x00000006, 0x00000070,	 /* event type: 6, size: 0x70 */
+	0x00000000, 0x00000000,  /* config: 0 */
+	0x00000001, 0x00000000,  /* sample_period: 1 */
+	0x00010003, 0x00000000,  /* sample_type: PERF_SAMPLE_IP | PERF_SAMPLE_TID |
+						 PERF_SAMPLE_PERIOD */
+	0x00000004, 0x00000000,  /* read_format: PERF_FORMAT_ID */
+	0x00141001, 0x00000000,  /* disabled: 1, enable_on_exec: 1,
+                                    sample_id_all: 1, exclude_guest: 1 */
+	0x00000000, 0x00000000,  /* wakeup_events: 0, bp_type: 0 */
+	0x00000000, 0x00000000,  /* config1 : 0 */
+	0x00000000, 0x00000000,  /* config1 : 0 */
+	0x00000000, 0x00000000,  /* branch_sample_type: 0 */
+	0x00000000, 0x00000000,  /* sample_regs_user: 0 */
+	0x00000000, 0x00000000,  /* sample_stack_user: 0, clockid: 0 */
+	0x00000000, 0x00000000,  /* sample_regs_intr: 0 */
+	0x00000000, 0x00000000,  /* aux_watermark: 0, sample_max_stack: 0 */
+	0x00000068, 0x00000000,  /* ids.offset: 0x68 */
+	0x00000008, 0x00000000,  /* ids.size: 0x8 */
 };
 
-static unsigned int perf_header_attr2[] = {
-        0x00000001, 0x00000070, 0x00000009, 0x00000000,
-        0x00000001, 0x00000000, 0x00010003, 0x00000000,
-        0x00000004, 0x00000000, 0x01843361, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000070, 0x00000000, 0x00000008, 0x00000000,
+static unsigned int perf_event_dummy[] = {
+	0x00000001, 0x00000070,	 /* event type: 1, size: 0x70 */
+	0x00000009, 0x00000000,  /* config: 9 */
+	0x00000001, 0x00000000,  /* sample_period: 1 */
+	0x00010003, 0x00000000,  /* sample_type: PERF_SAMPLE_IP | PERF_SAMPLE_TID |
+						 PERF_SAMPLE_PERIOD */
+	0x00000004, 0x00000000,  /* read_format: PERF_FORMAT_ID */
+	0x01843361, 0x00000000,  /* disabled: 1, exclude_kernel: 1
+				    exclude_hv: 1, mmap: 1,
+				    comm: 1, enable_on_exec: 1,
+				    task: 1, sample_id_all: 1,
+				    mmap2: 1, comm_exec: 1 */
+	0x00000000, 0x00000000,  /* wakeup_events: 0, bp_type: 0 */
+	0x00000000, 0x00000000,  /* config1 : 0 */
+	0x00000000, 0x00000000,  /* config1 : 0 */
+	0x00000000, 0x00000000,  /* branch_sample_type: 0 */
+	0x00000000, 0x00000000,  /* sample_regs_user: 0 */
+	0x00000000, 0x00000000,  /* sample_stack_user: 0, clockid: 0 */
+	0x00000000, 0x00000000,  /* sample_regs_intr: 0 */
+	0x00000000, 0x00000000,  /* aux_watermark: 0, sample_max_stack: 0 */
+	0x00000070, 0x00000000,  /* ids.offset: 0x70 */
+	0x00000008, 0x00000000,  /* ids.size: 0x8 */
 };
 
 static unsigned int perf_auxtrace_info[] = {
-        0x00000046, 0x02680000, 0x00000003, 0x00000000,
-        0x00000000, 0x00000000, 0x00000008, 0x00000006,
-        0x00000000, 0x00000000
+	0x00000046, 0x02680000,  /* type: PERF_RECORD_AUXTRACE_INFO, size: 0x268 */
+	0x00000003, 0x00000000,  /* info->type: PERF_AUXTRACE_CS_ETM */
+	0x00000000, 0x00000000,  /* version: 0 */
+	0x00000008, 0x00000006,  /* cpus: 8, type: 6 */
+	0x00000000, 0x00000000   /* snapshot_mode: 0 */
 };
 
 static unsigned int perf_kernel_mmap[] = {
-        0x00000001, 0x00500001, 0xffffffff, 0x00000000,
-        0x08080000, 0xffff0000, 0xf7f7ffff, 0x0000ffff,
-        0x08080000, 0xffff0000, 0x72656b5b, 0x2e6c656e,
-        0x6c6c616b, 0x736d7973, 0x65745f5d, 0x00007478,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-};
-
-static unsigned int perf_thread[] = {
-        0x00000003, 0x00280000, 0x0000090c, 0x0000090c,
-        0x66726570, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000,
+	0x00000001, 0x00500001,  /* type: PERF_RECORD_MMAP, size: 0x50,
+				    misc: PERF_RECORD_MISC_KERNEL */
+	0xffffffff, 0x00000000,  /* pid: 0xffffffff, tid: 0x0 */
+	0x08080000, 0xffff0000,  /* start: 0xffff000008080000 */
+	0xf7f7ffff, 0x0000ffff,  /* len:   0x0000fffff7f7ffff */
+	0x08080000, 0xffff0000,  /* pgoff: 0xffff000008080000 */
+	0x72656b5b, 0x2e6c656e,  /* filename: [kernel.kallsyms]_text */
+	0x6c6c616b, 0x736d7973,
+	0x65745f5d, 0x00007478,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
 };
 
 static unsigned int perf_threads[] = {
-        0x00000003, 0x00282000, 0x0000090c, 0x0000090c,
-        0x696e6170, 0x00000063, 0x0000090c, 0x0000090c,
-        0x00000016, 0x00000000, 0x0000000a, 0x00680002,
-        0x0000090c, 0x0000090c, 0x00400000, 0x00000000,
-        0x00006000, 0x00000000, 0x00000000, 0x00000000,
-        0x000000b3, 0x00000009, 0x00000085, 0x00000000,
-        0x00000000, 0x00000000, 0x00000005, 0x00001802,
-        0x6e69622f, 0x616e752f, 0x0000656d, 0x00000000,
-        0x0000090c, 0x0000090c, 0x00000016, 0x00000000,
-        0x0000000a, 0x00800002, 0x0000090c, 0x0000090c,
-        0xb77c2000, 0x0000ffff, 0x0002e000, 0x00000000,
-        0x00000000, 0x00000000, 0x000000b3, 0x00000009,
-        0x00000752, 0x00000000, 0x00000000, 0x00000000,
-        0x00000005, 0x00001802, 0x62696c2f, 0x7261612f,
-        0x34366863, 0x6e696c2d, 0x672d7875, 0x6c2f756e,
-        0x2e322d64, 0x732e3931, 0x0000006f, 0x00000000,
-        0x0000090c, 0x0000090c, 0x00000016, 0x00000000,
-        0x0000000a, 0x00600002, 0x0000090c, 0x0000090c,
-        0xb77ec000, 0x0000ffff, 0x00001000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000000, 0x00000000, 0x00000000, 0x00000000,
-        0x00000005, 0x00001002, 0x7364765b, 0x00005d6f,
-        0x0000090c, 0x0000090c, 0x00000016, 0x00000000,
-        0x0000000a, 0x00800002, 0x0000090c, 0x0000090c,
-        0xb7675000, 0x0000ffff, 0x0014d000, 0x00000000,
-        0x00000000, 0x00000000, 0x000000b3, 0x00000009,
-        0x0000076a, 0x00000000, 0x00000000, 0x00000000,
-        0x00000005, 0x00001002, 0x62696c2f, 0x7261612f,
-        0x34366863, 0x6e696c2d, 0x672d7875, 0x6c2f756e,
-        0x2d636269, 0x39312e32, 0x006f732e, 0x00000000,
-        0x0000090c, 0x0000090c, 0x00000016, 0x00000000,
-        0x0000000b, 0x00300000, 0x00000000, 0x00000000,
-        0x00002000, 0x00000000, 0x00000001, 0x00000000,
-        0x0000090c, 0x0000090c, 0x00000015, 0x00000000,
-        0x00000004, 0x00300000, 0x0000090c, 0x0000090c,
-        0x0000090c, 0x0000090c, 0xf89cbddc, 0x00000571,
-        0x0000090c, 0x0000090c, 0x00000016, 0x00000000,
+	0x00000003, 0x00280000,  /* type: PERF_RECORD_COMM, size: 0x28 */
+	0x0000090c, 0x0000090c,  /* pid: 0x90c, tid: 0x90c */
+	0x66726570, 0x00000000,  /* comm: perf */
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+
+        0x00000003, 0x00282000,  /* type: PERF_RECORD_COMM, size: 0x28 */
+	0x0000090c, 0x0000090c,  /* pid: 0x90c, tid: 0x90c */
+	0x696e6170, 0x00000063,  /* comm: panic */
+	0x0000090c, 0x0000090c,
+        0x00000016, 0x00000000,
+
+	0x0000000a, 0x00680002,  /* type: PERF_RECORD_MMAP2, size: 0x68 */
+	0x0000090c, 0x0000090c,  /* pid: 0x90c, tid: 0x90c */
+	0x00400000, 0x00000000,  /* addr: 0x00400000 */
+	0x00006000, 0x00000000,  /* len: 0x00006000 */
+	0x00000000, 0x00000000,  /* pgoff: 0x0 */
+	0x000000b3, 0x00000009,  /* maj: 0xb3, min: 0x9 */
+	0x00000085, 0x00000000,  /* ino: 0x85 */
+	0x00000000, 0x00000000,  /* ino_generation: 0x0 */
+	0x00000005, 0x00001802,  /* prot: PROT_READ | PROT_EXEC, flag: 0x1802 */
+	0x6e69622f, 0x616e752f,  /* comm: /bin/uname */
+	0x0000656d, 0x00000000,
+	0x0000090c, 0x0000090c,
+	0x00000016, 0x00000000,
+
+        0x0000000a, 0x00800002,
+	0x0000090c, 0x0000090c,
+	0xb77c2000, 0x0000ffff,
+	0x0002e000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x000000b3, 0x00000009,
+	0x00000752, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000005, 0x00001802,
+	0x62696c2f, 0x7261612f,  /* ld-2.19.so */
+	0x34366863, 0x6e696c2d,
+	0x672d7875, 0x6c2f756e,
+	0x2e322d64, 0x732e3931,
+	0x0000006f, 0x00000000,
+	0x0000090c, 0x0000090c,
+	0x00000016, 0x00000000,
+
+	0x0000000a, 0x00600002,
+	0x0000090c, 0x0000090c,
+	0xb77ec000, 0x0000ffff,
+	0x00001000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000005, 0x00001002,
+	0x7364765b, 0x00005d6f,  /* [vdso] */
+	0x0000090c, 0x0000090c,
+	0x00000016, 0x00000000,
+
+	0x0000000a, 0x00800002,
+	0x0000090c, 0x0000090c,
+	0xb7675000, 0x0000ffff,
+	0x0014d000, 0x00000000,
+	0x00000000, 0x00000000,
+	0x000000b3, 0x00000009,
+	0x0000076a, 0x00000000,
+	0x00000000, 0x00000000,
+	0x00000005, 0x00001002,
+	0x62696c2f, 0x7261612f,  /* /lib/aarch64-linux-gnu/libc-2.19.so */
+	0x34366863, 0x6e696c2d,
+	0x672d7875, 0x6c2f756e,
+	0x2d636269, 0x39312e32,
+	0x006f732e, 0x00000000,
+	0x0000090c, 0x0000090c,
+	0x00000016, 0x00000000,
+
+	0x0000000b, 0x00300000,  /* type: PERF_RECORD_AUX, size: 0x30 */
+	0x00000000, 0x00000000,  /* aux_offset: 0x0 */
+	0x00002000, 0x00000000,  /* aux_size: 0x2000 */
+	0x00000001, 0x00000000,  /* flag: 0x1 */
+	0x0000090c, 0x0000090c,
+	0x00000015, 0x00000000,
+
+        0x00000004, 0x00300000,  /* type: PERF_RECORD_EXIT, size: 0x30 */
+	0x0000090c, 0x0000090c,  /* pid, ppid: 0x90c */
+	0x0000090c, 0x0000090c,  /* tid, ptid: 0x90c */
+	0xf89cbddc, 0x00000571,
+	0x0000090c, 0x0000090c,
+	0x00000016, 0x00000000,
 };
 
 static unsigned int perf_auxtrace_snapshot[] = {
-        0x00000047, 0x00300000, 0x00002000, 0x00000000,
-        0x00000000, 0x00000000, 0x74bc6ab4, 0x5a1c47b3,
-        0x00000000, 0x0000090c, 0xffffffff, 0x00000000,
+	0x00000047, 0x00300000,  /* type: PERF_RECORD_AUXTRACE, size: 0x30 */
+	0x00002000, 0x00000000,  /* auxsize: 0x2000 */
+	0x00000000, 0x00000000,  /* auxoffset: 0x0 */
+	0x74bc6ab4, 0x5a1c47b3,  /* reference: rand() */
+	0x00000000, 0x0000090c,  /* idx: 0x0, pid: 0x90c */
+	0xffffffff, 0x00000000,  /* cpu: -1 */
 };
 
 static unsigned int perf_record_finish[] = {
@@ -446,23 +531,27 @@ static int csdump_perfdata(void)
 
 	fwrite(perf_header, sizeof(perf_header), 1, out_fp);
 	fwrite(perf_event_id, sizeof(perf_event_id), 1, out_fp);
-	fwrite(perf_header_attr1, sizeof(perf_header_attr1), 1, out_fp);
-	fwrite(perf_header_attr2, sizeof(perf_header_attr2), 1, out_fp);
+	fwrite(perf_event_cs_etm, sizeof(perf_event_cs_etm), 1, out_fp);
+	fwrite(perf_event_dummy, sizeof(perf_event_dummy), 1, out_fp);
+
+	online_cpus = get_cpus_online();
+
+	/* Adjust auxtrace_info size */
+	perf_auxtrace_info[1] = (perf_auxtrace_info[1] & 0xffff) |
+		((sizeof(perf_auxtrace_info) + csdump_metadata_len) << 16);
+	/* Adjust CPU num */
+	perf_auxtrace_info[6] = online_cpus;
+
 	fwrite(perf_auxtrace_info, sizeof(perf_auxtrace_info), 1, out_fp);
 	trace_len += sizeof(perf_auxtrace_info);
 
-	online_cpus = get_cpus_online();
 	for (i = 0; i < online_cpus; i++) {
 		fprintf(fp, "cpu = %d\n", i);
 		trace_len += csdump_write_buf(out_fp, "etm", i);
 	}
 
-
 	fwrite(perf_kernel_mmap, sizeof(perf_kernel_mmap), 1, out_fp);
 	trace_len += sizeof(perf_kernel_mmap);
-
-	fwrite(perf_thread, sizeof(perf_thread), 1, out_fp);
-	trace_len += sizeof(perf_thread);
 
 	fwrite(perf_threads, sizeof(perf_threads), 1, out_fp);
 	trace_len += sizeof(perf_threads);
@@ -478,9 +567,8 @@ static int csdump_perfdata(void)
 	fwrite(perf_sections, sizeof(perf_sections), 1, out_fp);
 	fwrite(perf_sections_feat, sizeof(perf_sections_feat), 1, out_fp);
 
-	perf_header[12] = trace_len;
-	rewind(out_fp);
-	fwrite(perf_header, sizeof(perf_header), 1, out_fp);
+	fseek(out_fp, 48L, SEEK_SET);
+	fwrite(&trace_len, sizeof(trace_len), 1, out_fp);
 
 	fclose(out_fp);
 
