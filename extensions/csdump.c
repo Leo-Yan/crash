@@ -45,6 +45,11 @@ static int koffset(coresight_dump_node, list);
 static int koffset(coresight_dump_node, buf);
 static int koffset(coresight_dump_node, buf_size);
 static int koffset(coresight_dump_node, name);
+static int koffset(coresight_dump_node, csdev);
+
+static int koffset(coresight_device, dev);
+static int koffset(device, init_name);
+static int koffset(kobject, name);
 
 static struct list_data list_data;
 static int instance_count;
@@ -56,6 +61,11 @@ static int csdump_write_buf(FILE *out_fp, char *component, int cpu_idx)
 	ulong field;
 	ulong name_addr;
 	ulong buf_addr;
+	ulong csdev_addr;
+	ulong csdev_addr_2;
+	ulong dev_addr;
+	ulong kobj_addr;
+	ulong init_name_addr;
 	int cpu, buf_sz, i, ret;
 	char name[64];
 	char *buf;
@@ -67,11 +77,33 @@ static int csdump_write_buf(FILE *out_fp, char *component, int cpu_idx)
 
 		field = instance_ptr - koffset(coresight_dump_node, list);
 
+		fprintf(fp, "0 %llx\n", field);
+
 		read_value(cpu, field, coresight_dump_node, cpu);
 		read_value(buf_addr, field, coresight_dump_node, buf);
 		read_value(buf_sz, field, coresight_dump_node, buf_size);
 		read_value(name_addr, field, coresight_dump_node, name);
 		read_string(name_addr, name, 64);
+
+		fprintf(fp, "1 %s\n", name);
+
+		read_value(csdev_addr, field, coresight_dump_node, csdev);
+
+		//readmem(csdev_addr, KVADDR, csdev_addr_2, 8, "read page for write",
+		//	FAULT_ON_ERROR);
+
+		fprintf(fp, "2 %llx\n", csdev_addr);
+
+		read_value(dev_addr, csdev_addr, coresight_device, dev);
+
+
+		dev_addr = csdev_addr + MEMBER_OFFSET("coresight_device", "dev");
+		fprintf(fp, "3 %llx\n", dev_addr);
+
+		kobj_addr = dev_addr + MEMBER_OFFSET("device", "kobj");
+		read_value(init_name_addr, kobj_addr, kobject, name);
+		read_string(init_name_addr, name, 64);
+		fprintf(fp, "4 %s\n", name);
 
 		if (!buf_sz)
 			continue;
@@ -130,7 +162,7 @@ static int csdump_tracedata(void)
 		return -1;
 	}
 
-	csdump_write_buf(out_fp, "etf", -1);
+	csdump_write_buf(out_fp, "etf", 0);
 
 	fclose(out_fp);
 
@@ -400,7 +432,7 @@ static int csdump_perfdata(void)
 	fwrite(perf_auxtrace_snapshot, sizeof(perf_auxtrace_snapshot), 1, out_fp);
 	trace_len += sizeof(perf_auxtrace_snapshot);
 
-	trace_len += csdump_write_buf(out_fp, "etf", -1);
+	trace_len += csdump_write_buf(out_fp, "etf", 0);
 
 	fwrite(perf_record_finish, sizeof(perf_record_finish), 1, out_fp);
 	trace_len += sizeof(perf_record_finish);
@@ -438,6 +470,11 @@ static int csdump_prepare(void)
 	init_offset(coresight_dump_node, buf);
 	init_offset(coresight_dump_node, buf_size);
 	init_offset(coresight_dump_node, name);
+	init_offset(coresight_dump_node, csdev);
+
+	init_offset(coresight_device, dev);
+	init_offset(device, init_name);
+	init_offset(kobject, name);
 
 	/* Get pointer to dump list */
 	sym_dump_list = symbol_search("coresight_dump_list");
